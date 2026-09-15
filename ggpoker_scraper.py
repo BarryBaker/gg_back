@@ -16,6 +16,7 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
 import os
+
 try:
     from webdriver_manager.core.utils import ChromeType
 except Exception:
@@ -28,24 +29,26 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+
 class GGPokerScraper:
     def __init__(self, headless=False):
         """
         Initialize the scraper
-        
+
         Args:
-            headless (bool): If True, run browser in headless mode. 
+            headless (bool): If True, run browser in headless mode.
                            If False, browser will be visible so you can follow along.
         """
         self.driver = None
         self.headless = headless
         self.setup_driver()
-        
+
         # Configurable targets per replica
-        self.promo_url = os.getenv("PROMO_URL", "https://ggpoker.com/promotions/omaha-daily-leaderboard/")
+        self.promo_url = os.getenv(
+            "PROMO_URL", "https://ggpoker.com/promotions/omaha-daily-leaderboard/"
+        )
         self.game_name = os.getenv("GAME_NAME", "PLO").strip()
-      
-        
+
         # Initialize database manager
         self.db_manager = DatabaseManager()
         print("✅ Database manager initialized")
@@ -61,7 +64,7 @@ class GGPokerScraper:
         concat_parts = []
         for i, part in enumerate(parts):
             if i > 0:
-                concat_parts.append("\"'\"")  # add a literal single-quote between parts
+                concat_parts.append('"\'"')  # add a literal single-quote between parts
             concat_parts.append(f"'{part}'")
         return "concat(" + ", ".join(concat_parts) + ")"
 
@@ -90,14 +93,18 @@ class GGPokerScraper:
         else:
             chrome_type_env = os.getenv("CHROME_TYPE", "chrome").lower()
             if chrome_type_env == "chromium":
-                service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
+                service = Service(
+                    ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install()
+                )
             else:
                 service = Service(ChromeDriverManager().install())
-        
+
         try:
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             # Remove webdriver property to avoid detection
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            self.driver.execute_script(
+                "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+            )
             print("✅ WebDriver initialized successfully")
         except Exception as e:
             print(f"❌ Error setting up WebDriver: {e}")
@@ -106,22 +113,22 @@ class GGPokerScraper:
     def access_ggpoker_page(self):
         """Access the GGPoker Omaha Daily Leaderboard page"""
         url = self.promo_url
-        
+
         try:
             print(f"🌐 Accessing: {url}")
             self.driver.get(url)
-            
+
             # Wait for page to load
             time.sleep(3)
-            
+
             # Wait for the main content to be present
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
-            
+
             print("✅ Page loaded successfully")
             return True
-            
+
         except Exception as e:
             print(f"❌ Error accessing page: {e}")
             return False
@@ -136,21 +143,24 @@ class GGPokerScraper:
                 EC.presence_of_element_located((By.XPATH, heading_xpath))
             )
             print(f"✅ Found {self.game_name} section heading")
-            
+
             # Find the iframe that is the first responsive-iframe sibling under this heading
-            iframe_xpath = heading_xpath + "/following-sibling::div[contains(@class,'responsive-iframe')][1]//iframe"
+            iframe_xpath = (
+                heading_xpath
+                + "/following-sibling::div[contains(@class,'responsive-iframe')][1]//iframe"
+            )
             iframe = WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.XPATH, iframe_xpath))
             )
-            
+
             print("✅ Found matching iframe under heading")
-            
+
             # Get the iframe source URL
             iframe_src = iframe.get_attribute("src")
             print(f"🔗 Iframe source URL: {iframe_src}")
-            
+
             return iframe, iframe_src
-            
+
         except Exception as e:
             print(f"❌ Error finding {self.game_name} section: {e}")
             return None, None
@@ -159,20 +169,20 @@ class GGPokerScraper:
         """Click on the iframe to interact with it"""
         try:
             print("🖱️ Clicking on iframe...")
-            
+
             # Scroll to the iframe to make it visible
             self.driver.execute_script("arguments[0].scrollIntoView(true);", iframe)
             time.sleep(1)
-            
+
             # Click on the iframe
             iframe.click()
             print("✅ Clicked on iframe")
-            
+
             # Wait a moment to see if anything happens
             time.sleep(2)
-            
+
             return True
-            
+
         except Exception as e:
             print(f"❌ Error clicking iframe: {e}")
             return False
@@ -181,20 +191,28 @@ class GGPokerScraper:
         """Explore the iframe content by navigating to its source URL"""
         try:
             print(f"🔍 Exploring iframe content at: {iframe_src}")
-            
+
             # Open the iframe URL in a new tab
             self.driver.execute_script(f"window.open('{iframe_src}', '_blank');")
-            
+
             # Switch to the new tab
             self.driver.switch_to.window(self.driver.window_handles[-1])
-            
+
             print("✅ Opened iframe content in new tab")
-            
-            # Wait for the new page to load
-            time.sleep(3)
-            
+
+            # Wait for the Angular app and its rendered DOM to load.
+            WebDriverWait(self.driver, 30).until(
+                lambda driver: driver.execute_script("return document.readyState")
+                == "complete"
+            )
+            WebDriverWait(self.driver, 30).until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "app-promotion-leaderboard-group")
+                )
+            )
+
             return True
-            
+
         except Exception as e:
             print(f"❌ Error exploring iframe content: {e}")
             return False
@@ -203,23 +221,25 @@ class GGPokerScraper:
         """Find the dropdown-layer class and extract all blind level text from list elements"""
         try:
             print("🔍 Looking for dropdown-layer class...")
-            
-            # Wait for the dropdown to be present
+
             dropdown = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "dropdown-layer"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "ul.dropdown-layer"))
             )
             print("✅ Found dropdown-layer element")
-            
+            print("aaaaa", dropdown.get_attribute("outerHTML"))
+
+            # all_children_by_css = dropdown.find_elements_by_css_selector("*")
+
             # Wait a bit more for Angular content to load
             print("⏳ Waiting for Angular content to load...")
             time.sleep(3)
-            
+
             # Find all list elements (li) within the dropdown
             list_elements = dropdown.find_elements(By.TAG_NAME, "li")
             print(f"📋 Found {len(list_elements)} list elements in dropdown")
-            
+
             return list_elements
-            
+
         except Exception as e:
             print(f"❌ Error extracting blind levels from dropdown: {e}")
             return []
@@ -228,33 +248,39 @@ class GGPokerScraper:
         """Click through all blind level options to make them clickable"""
         try:
             print(f"🔄 Starting to click through {len(list_elements)} blind levels...")
-            
+
             # Find the 'blind-text' class clickable element
             blind_text_element = WebDriverWait(self.driver, 10).until(
                 EC.element_to_be_clickable((By.CLASS_NAME, "blind-text"))
             )
             print(f"  ✅ Found 'blind-text' clickable element")
-            
+
             dropdown = self.driver.find_element(By.CLASS_NAME, "dropdown-layer")
             for i, list_element in enumerate(list_elements):
                 try:
                     print(f"\n🖱️ Processing blind level {i}/{len(list_elements)}...")
-                    
+
                     # Get the text content of the current list element
-                    text_content = list_element.get_attribute('textContent').strip() if list_element.get_attribute('textContent') else ''
-                    
+                    text_content = (
+                        list_element.get_attribute("textContent").strip()
+                        if list_element.get_attribute("textContent")
+                        else ""
+                    )
+
                     # Click on it to open the dropdown
                     print(f"  🖱️ Clicking on 'blind-text' element...")
                     blind_text_element.click()
-                    
+
                     # Wait a moment for the dropdown to open
                     time.sleep(2)
-                    
+
                     # Check if the dropdown now has 'layer-open' class
                     classes = dropdown.get_attribute("class")
-                    
+
                     if "layer-open" in classes:
-                        print(f"  ✅ Dropdown opened successfully (has 'layer-open' class)")
+                        print(
+                            f"  ✅ Dropdown opened successfully (has 'layer-open' class)"
+                        )
                         print(f"  📋 List elements are now clickable")
                         # Click on the actual list element
                         print(f"  🖱️ Clicking on list element {i}...")
@@ -264,21 +290,23 @@ class GGPokerScraper:
 
                         # Now extract player ranking data from the table
                         self.extract_player_ranking_data(text_content)
-                        
+
                     else:
                         print(f"  ⚠️ Dropdown did not get 'layer-open' class")
                         print(f"  🔍 Current classes: {classes}")
-                    
+
                     # Wait a bit before processing next element
                     time.sleep(2)
-                    
+
                 except Exception as e:
                     print(f"  ❌ Error processing blind level {i}: {e}")
                     continue
-            
-            print(f"\n✅ Completed clicking through all {len(list_elements)} blind levels")
+
+            print(
+                f"\n✅ Completed clicking through all {len(list_elements)} blind levels"
+            )
             return True
-            
+
         except Exception as e:
             print(f"❌ Error during blind level iteration: {e}")
             return False
@@ -289,39 +317,43 @@ class GGPokerScraper:
             if game is None:
                 game = self.game_name
             print("    🔍 Looking for playerRankingBody class...")
-            
+
             # Wait for the player ranking body to be present
             ranking_body = WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.CLASS_NAME, "playerRankingBody"))
             )
             print("    ✅ Found playerRankingBody element")
-            
+
             # Find all tr tags within the ranking body
             tr_elements = ranking_body.find_elements(By.TAG_NAME, "tr")
             print(f"    📋 Found {len(tr_elements)} table rows")
-            
+
             # Get timestamp and blind level info
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"  {timestamp} - {text_content}")
-            
+
             # Extract blind level from text_content (e.g., "$0.01/$0.02")
             blind_level = text_content.strip()
-            
+
             # Build leaderboard name (same as before via DB manager sanitizer)
             table_name = self.db_manager.get_leaderboard_table_name(game, blind_level)
             print(f"   Table name: {table_name}")
-            
+
             # Normalized path: create update batch and resolve leaderboard id
             lb_id = self.db_manager.get_or_create_leaderboard_id(table_name)
             update_id = self.db_manager.create_update_batch(timestamp)
-            
+
             # Process each player row
             for i, tr in enumerate(tr_elements, 1):
                 try:
                     td_elements = tr.find_elements(By.TAG_NAME, "td")
                     if len(td_elements) >= 4:
                         # name (td[1]), country (td[2]), points (td[3])
-                        player_name = td_elements[1].get_attribute('textContent').strip() if td_elements[1].get_attribute('textContent') else ''
+                        player_name = (
+                            td_elements[1].get_attribute("textContent").strip()
+                            if td_elements[1].get_attribute("textContent")
+                            else ""
+                        )
                         # Extract country from the <span> child with 'data-title' attribute
                         country = None
                         try:
@@ -332,29 +364,39 @@ class GGPokerScraper:
                         except Exception:
                             country = None
                         # print(f"      🔍 Player: {player_name}, Country: {country}")
-                        points_text = td_elements[3].get_attribute('textContent').strip() if td_elements[3].get_attribute('textContent') else ''
-                        
+                        points_text = (
+                            td_elements[3].get_attribute("textContent").strip()
+                            if td_elements[3].get_attribute("textContent")
+                            else ""
+                        )
+
                         if player_name and points_text:
                             # Convert points like "1,234.56" to float
                             try:
-                                pts = float(points_text.replace(',', ''))
+                                pts = float(points_text.replace(",", ""))
                             except Exception:
                                 continue
-                            player_id = self.db_manager.get_or_create_player_id(player_name, country)
-                            self.db_manager.insert_fact(lb_id, update_id, player_id, pts)
+                            player_id = self.db_manager.get_or_create_player_id(
+                                player_name, country
+                            )
+                            self.db_manager.insert_fact(
+                                lb_id, update_id, player_id, pts
+                            )
                         else:
                             print(f"      ⚠️ Row {i}: Missing name or points")
                     else:
-                        print(f"      ⚠️ Row {i}: Not enough td elements ({len(td_elements)})")
+                        print(
+                            f"      ⚠️ Row {i}: Not enough td elements ({len(td_elements)})"
+                        )
                 except Exception as e:
                     print(f"      ❌ Error processing row {i}: {e}")
                     continue
-            
+
             print(f"    ✅ Successfully processed {len(tr_elements)} player entries")
-            
+
         except Exception as e:
             print(f"    ❌ Error extracting player ranking data: {e}")
-            
+
         except Exception as e:
             print(f"    ❌ Error extracting player ranking data: {e}")
             return []
@@ -363,70 +405,77 @@ class GGPokerScraper:
         """Run the complete scraping session"""
         try:
             print("🚀 Starting GGPoker scraping session...")
-            
+
             # Step 1: Access the main page
             if not self.access_ggpoker_page():
                 return False
-            
+
             # Step 2: Find the PLO section and iframe
             iframe, iframe_src = self.find_plo_section()
             if not iframe:
                 return False
-            
+
             # Step 3: Click on the iframe
             if not self.click_iframe_link(iframe):
                 return False
-            
+
             # Step 4: Explore the iframe content
             if iframe_src:
                 if not self.explore_iframe_content(iframe_src):
                     return False
-            
+
             # Step 5: Extract blind levels from the dropdown
             print("\n🎯 Now extracting blind levels from dropdown...")
             list_elements = self.get_blind_levels_from_dropdown()
-            
+
             if list_elements:
                 print(f"\n🎉 Successfully found {len(list_elements)} list elements!")
-                
+
                 # Step 6: Click through all blind levels to make them clickable
                 print("\n🔄 Now clicking through all blind levels...")
                 if self.click_through_blind_levels(list_elements):
                     print("✅ Successfully clicked through all blind levels")
                 else:
                     print("⚠️ Some issues occurred while clicking through blind levels")
-                
+
             else:
                 print("⚠️ No list elements found in dropdown")
-            
+
             print("\n✅ Scraping session completed successfully!")
             print("\n📋 Next steps:")
             print("1. Blind levels have been extracted and printed above")
             print("2. You can manually explore the iframe content further")
             print("3. Let me know what data you want to extract next")
-            
+
             return True
-            
+
         except Exception as e:
             print(f"❌ Error during scraping session: {e}")
             return False
-    
+
     def close(self):
         """Close the browser and database connection"""
         if self.driver:
             self.driver.quit()
             print("🔒 Browser closed")
-        
-        if hasattr(self, 'db_manager'):
+
+        if hasattr(self, "db_manager"):
             self.db_manager.close()
 
 
 def main():
     """Main function to run the scraper"""
     parser = argparse.ArgumentParser(description="Run the GGPoker scraper")
-    parser.add_argument("--headless", action="store_true", help="Run Chrome in headless mode")
+    parser.add_argument(
+        "--headless", action="store_true", help="Run Chrome in headless mode"
+    )
     default_interval = int(os.getenv("INTERVAL", "0"))
-    parser.add_argument("--interval", type=int, default=default_interval, help="Seconds between runs; 0 runs once")
+    parser.add_argument(
+        "--interval",
+        type=int,
+        default=default_interval,
+        help="Seconds between runs; 0 runs once",
+    )
     args = parser.parse_args()
 
     def run_once(headless_flag: bool) -> bool:
@@ -457,6 +506,7 @@ def main():
             print("\n⏹️ Stopped by user")
     else:
         run_once(args.headless)
+
 
 if __name__ == "__main__":
     main()

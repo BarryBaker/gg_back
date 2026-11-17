@@ -7,30 +7,34 @@ Scrapes the GGPoker Omaha Daily Leaderboard, stores results in a normalized data
 - Modern Selenium-based scraper (Chrome/Chromium, headless by default)
 - Configurable target page and game (e.g., `PLO`)
 - Normalized schema: `leaderboards`, `players` (with `country`), `update_batch`, `facts`
-- Auto-detects DB backend: SQLite by default, PostgreSQL when `DATABASE_URL` is set
+- Uses SQLite when `SQLITE_DB_PATH` is set; otherwise PostgreSQL when `DATABASE_URL` is set, and SQLite by default
 - Lightweight Flask API for tables, pivoted data, player history, and top players
 - Docker images for continuous scraping and API service
 - Helper viewers for local SQLite and remote PostgreSQL
 
 ## Quick Start (Local)
 
-1) Install dependencies
+1. Install dependencies
+
 ```bash
 python -m venv .venv && source .venv/bin/activate  # optional
 pip install -r requirements.txt
 ```
 
-2) Run the scraper once (headless by default)
+2. Run the scraper once (headless by default)
+
 ```bash
 python ggpoker_scraper.py
 ```
 
-3) Or run continuously every 5 minutes
+3. Or run continuously every 5 minutes
+
 ```bash
 python ggpoker_scraper.py --interval 300
 ```
 
 Environment examples
+
 ```bash
 export INTERVAL=300
 export DB_PATH=ggpoker_leaderboards.db
@@ -40,12 +44,14 @@ python ggpoker_scraper.py
 ```
 
 Chrome/Chromium notes
+
 - The project auto-installs a matching chromedriver. In Docker, we use system Chromium.
 - To see the browser locally, either pass `--headless` off by setting `HEADLESS=0`, or omit `HEADLESS`.
 
 ## HTTP API
 
 Start the API locally (uses the same DB autodetection as the scraper):
+
 ```bash
 python api.py
 # or production-style:
@@ -55,6 +61,7 @@ python serve.py  # runs gunicorn binding to PORT (default 8000)
 Base URL: `http://localhost:8000`
 
 Endpoints
+
 - GET `/health` → `{ "status": "ok" }`
 - GET `/tables` → `["PLO_...", ...]` from the `leaderboards` table
 - GET `/tables/<leaderboard>/data?columns=4&limit=16`
@@ -67,6 +74,7 @@ Endpoints
   - Returns best daily standings per day aggregated across the historical updates (time cutoffs differ per backend)
 
 Example
+
 ```bash
 curl http://localhost:8000/health
 curl http://localhost:8000/tables
@@ -78,10 +86,13 @@ curl "http://localhost:8000/tables/PLO___0dot01_0dot02/top-players?limit=25"
 ## Database
 
 Autodetection
-- If `DATABASE_URL` (or `DATABASE_PRIVATE_URL` / `DATABASE_PUBLIC_URL` for the API) is set to a PostgreSQL URL, the app uses PostgreSQL
-- Otherwise, it falls back to SQLite (file path from `SQLITE_DB_PATH` or `DB_PATH`, default `ggpoker_leaderboards.db`)
+
+- If `SQLITE_DB_PATH` is set, the scraper and API use that SQLite file even when a PostgreSQL URL is also set
+- Otherwise, if `DATABASE_URL` (or `DATABASE_PRIVATE_URL` / `DATABASE_PUBLIC_URL` for the API) is set to a PostgreSQL URL, the app uses PostgreSQL
+- Otherwise, it falls back to SQLite (file path from `DB_PATH`, default `ggpoker_leaderboards.db`)
 
 Normalized schema
+
 ```sql
 leaderboards(id, name UNIQUE)
 players(id, name UNIQUE, country)
@@ -91,14 +102,16 @@ facts(leaderboard_id, update_id, player_id, points,
 ```
 
 Viewers
+
 - Local SQLite: `python view_database.py`
 - Remote PostgreSQL (Railway, etc.):
-  1) copy `env_template.txt` → `.env` and set `DATABASE_URL`
-  2) `python view_remote_database.py`
+  1. copy `env_template.txt` → `.env` and set `DATABASE_URL`
+  2. `python view_remote_database.py`
 
 ## Configuration (Environment)
 
 Scraper
+
 - `PROMO_URL` (default: Omaha Daily Leaderboard URL)
 - `GAME_NAME` (default: `PLO`)
 - `INTERVAL` run cadence in seconds; `0` runs once (default: `300` in Docker, `0` locally)
@@ -106,46 +119,81 @@ Scraper
 - `CHROME_BIN`, `CHROME_DRIVER_BIN`, `CHROME_TYPE` (e.g., `chromium`) for custom binaries
 
 Database
+
 - `DATABASE_PRIVATE_URL` → preferred by the API if set
 - `DATABASE_URL` → primary Postgres URL for scraper/API
 - `DATABASE_PUBLIC_URL` → last fallback for the API
-- `SQLITE_DB_PATH` or `DB_PATH` → SQLite file path (default: `ggpoker_leaderboards.db`)
+- `SQLITE_DB_PATH` → explicitly use this SQLite file, taking precedence over PostgreSQL URLs
+- `DB_PATH` → SQLite file path when PostgreSQL is not selected (default: `ggpoker_leaderboards.db`)
+- Local Docker PostgreSQL defaults to `postgresql://gguser:ggpassword@postgres:5432/ggpoker`
 
 API
+
 - `PORT` (default: `8000`)
 
 ## Docker
 
-We provide two services in `docker-compose.yml`:
-- `scraper`: runs continuously and writes to a persistent SQLite volume at `./data`
+We provide three services in `docker-compose.yml`:
+
+- `postgres`: local PostgreSQL 16 database with a persistent Docker volume
+- `scraper`: runs continuously and writes to PostgreSQL
 - `api`: exposes HTTP API on port `8000`
 
 Build & run
+
 ```bash
 docker compose up -d --build
 ```
 
+The application creates its PostgreSQL tables automatically on startup. Set
+`DATABASE_URL` in `.env` to use a hosted PostgreSQL database instead; the local
+`postgres` service can then be left unused.
+
 Persisted data
-- SQLite file is mounted at `./data/ggpoker_leaderboards.db`
+
+- PostgreSQL data is stored in the `gg_postgres_data` Docker volume
+- The old SQLite file in `./data` is not migrated automatically
 
 Environment overrides (edit `docker-compose.yml` or pass with `-e`)
+
 - `INTERVAL` (e.g., `600`)
 - `DB_PATH` (container default `/data/ggpoker_leaderboards.db`)
+- `DATABASE_URL` (use PostgreSQL when running multiple scraper instances)
+- `PROMO_URL` and `GAME_NAME` (target page and game for each instance)
 - `CHROME_BIN=/usr/bin/chromium`, `CHROME_TYPE=chromium`
 - For the API: `DATABASE_PRIVATE_URL` / `DATABASE_URL` / `DATABASE_PUBLIC_URL`
 
+Run multiple scraper instances
+
+Multiple instances should share PostgreSQL, rather than the mounted SQLite file. The
+Compose default uses the local PostgreSQL service; set `DATABASE_URL` in `.env` only
+when using a hosted PostgreSQL database. Start one container per target with a unique name:
+
+```bash
+docker compose build scraper
+docker compose run -d --name gg_scraper_plo scraper
+docker compose run -d --name gg_scraper_nlh \
+  -e PROMO_URL=https://ggpoker.com//poker-promotions/holdem-daily-leaderboard/ \
+  -e GAME_NAME=NLH scraper
+```
+
+The first command uses the defaults from `.env`; each additional command can override
+only `PROMO_URL` and `GAME_NAME`. Do not run multiple instances against the same SQLite
+file: SQLite serializes writes and can produce lock errors under concurrent scraping.
+
 Stop
+
 ```bash
 docker compose down
 ```
 
 ## How the Scraper Works (High-Level)
 
-1) Opens the promo page and locates the configured game section (e.g., `PLO`)
-2) Finds the embedded leaderboard iframe and opens its URL in a new tab
-3) Enumerates blind-level options from the dropdown
-4) Clicks through each blind level and extracts the ranking table
-5) Upserts normalized rows into the database with a new `update_batch` timestamp
+1. Opens the promo page and locates the configured game section (e.g., `PLO`)
+2. Finds the embedded leaderboard iframe and opens its URL in a new tab
+3. Enumerates blind-level options from the dropdown
+4. Clicks through each blind level and extracts the ranking table
+5. Upserts normalized rows into the database with a new `update_batch` timestamp
 
 ## Troubleshooting
 

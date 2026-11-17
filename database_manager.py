@@ -14,10 +14,18 @@ class DatabaseManager:
         """
         Initialize database manager - auto-detects environment
         """
+        sqlite_path = db_path or os.getenv("SQLITE_DB_PATH")
         # Check if we're in cloud (Railway/Render) or local
         self.database_url = os.getenv('DATABASE_URL')
         
-        if self.database_url and (self.database_url.startswith('postgres://') or self.database_url.startswith('postgresql://')):
+        if (
+            not sqlite_path
+            and self.database_url
+            and (
+                self.database_url.startswith('postgres://')
+                or self.database_url.startswith('postgresql://')
+            )
+        ):
             # Cloud environment - use PostgreSQL
             self.use_postgres = True
             self.init_postgres()
@@ -25,7 +33,9 @@ class DatabaseManager:
         else:
             # Local environment - use SQLite
             self.use_postgres = False
-            self.db_path = db_path or os.getenv("DB_PATH", "ggpoker_leaderboards.db")
+            self.db_path = (
+                sqlite_path or os.getenv("DB_PATH") or "ggpoker_leaderboards.db"
+            )
             self.init_sqlite()
             print("💻 Using SQLite (local)")
         
@@ -359,6 +369,5 @@ class DatabaseManager:
         if hasattr(self, 'connection') and self.connection:
             self.connection.close()
             print("🔒 Database connection closed")
-
 
 

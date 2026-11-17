@@ -1,30 +1,97 @@
 # Remove the "version: '3.9'" line from docker-compose.yml
+
+x-scraper: &scraper
+  build: .
+  image: gg-scraper:latest
+
+  depends_on:
+    postgres:
+      condition: service_healthy
+  environment: &scraper-env
+    INTERVAL: "30"
+    MAX_TS_COLUMNS: "8760"
+    DATABASE_URL: "postgresql://gguser:ggpassword@postgres:5432/ggpoker"
+    HEADLESS: "0"
+    CHROME_BIN: /usr/bin/chromium
+    CHROME_TYPE: chromium
+  volumes:
+    - ./data:/data
+  restart: unless-stopped
+
 services:
-  scraper:
-    build: .
-    image: gg-scraper:latest
-    container_name: gg_scraper
+  postgres:
+    image: postgres:16
     environment:
-      - INTERVAL=600
-      - MAX_TS_COLUMNS=8000
-      - DB_PATH=/data/ggpoker_leaderboards.db
-      - CHROME_BIN=/usr/bin/chromium
-      - CHROME_TYPE=chromium
+      POSTGRES_DB: ggpoker
+      POSTGRES_USER: gguser
+      POSTGRES_PASSWORD: ggpassword
+    ports:
+      - "127.0.0.1:5433:5432"
     volumes:
-      - ./data:/data
-    restart: unless-stopped
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gguser -d ggpoker"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  scraper_plo:
+    <<: *scraper
+    container_name: gg_scraper_plo
+    environment:
+      <<: *scraper-env
+      GAME_NAME: PLO
+      PROMO_URL: "https://ggpoker.com/poker-promotions/omaha-daily-leaderboard/"
+
+  scraper_plo-5:
+    <<: *scraper
+    container_name: gg_scraper_plo-5
+    environment:
+      <<: *scraper-env
+      GAME_NAME: PLO-5
+      PROMO_URL: "https://ggpoker.com/poker-promotions/omaha-daily-leaderboard/"
+
+  scraper_plo-6:
+    <<: *scraper
+    container_name: gg_scraper_plo-6
+    environment:
+      <<: *scraper-env
+      GAME_NAME: PLO-6
+      PROMO_URL: "https://ggpoker.com/poker-promotions/omaha-daily-leaderboard/"
+
+  scraper_holdem:
+    <<: *scraper
+    container_name: gg_scraper_holdem
+    environment:
+      <<: *scraper-env
+      GAME_NAME: Hold'em
+      PROMO_URL: "https://ggpoker.com/poker-promotions/holdem-daily-leaderboard/"
+
+  scraper_holdem-9:
+    <<: *scraper
+    container_name: gg_scraper_holdem-9
+    environment:
+      <<: *scraper-env
+      GAME_NAME: 9Max (Ante) Games
+      PROMO_URL: "https://ggpoker.com/poker-promotions/holdem-daily-leaderboard/"
 
   api:
     build: .
     image: gg-api:latest
     container_name: gg_api
     command: python api.py
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       # Prefer private DB URL if available; fallback to DATABASE_URL or public
-      - DATABASE_PRIVATE_URL=${DATABASE_PRIVATE_URL}
-      - DATABASE_URL=${DATABASE_URL}
-      - DATABASE_PUBLIC_URL=${DATABASE_PUBLIC_URL}
+      - DATABASE_PRIVATE_URL=${DATABASE_PRIVATE_URL:-}
+      - DATABASE_URL=postgresql://gguser:ggpassword@postgres:5432/ggpoker
+      - DATABASE_PUBLIC_URL=${DATABASE_PUBLIC_URL:-}
       - PORT=8000
     ports:
       - "8000:8000"
     restart: unless-stopped
+
+volumes:
+  postgres_data:

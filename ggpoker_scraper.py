@@ -42,10 +42,14 @@ class GGPokerScraper:
         self.driver = None
         self.headless = headless
         self.setup_driver()
+        self.duplicate_guard = (
+            None,
+            None,
+        )  # Keep track of last leaderboard 1st place nama and points, sometimes the leaderboard doesn't update and we don't want to insert duplicates
 
         # Configurable targets per replica
         self.promo_url = os.getenv(
-            "PROMO_URL", "https://ggpoker.com/promotions/omaha-daily-leaderboard/"
+            "PROMO_URL", "https://ggpoker.com/poker-promotions/omaha-daily-leaderboard/"
         )
         self.game_name = os.getenv("GAME_NAME", "PLO").strip()
 
@@ -118,11 +122,13 @@ class GGPokerScraper:
             print(f"🌐 Accessing: {url}")
             self.driver.get(url)
 
-            # Wait for page to load
-            time.sleep(3)
-
-            # Wait for the main content to be present
+            # Wait for the document and the main content instead of relying on a
+            # fixed delay, which is especially fragile in headless Chrome.
             WebDriverWait(self.driver, 10).until(
+                lambda driver: driver.execute_script("return document.readyState")
+                in ("interactive", "complete")
+            )
+            WebDriverWait(self.driver, 30).until(
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
 
@@ -192,11 +198,10 @@ class GGPokerScraper:
         try:
             print(f"🔍 Exploring iframe content at: {iframe_src}")
 
-            # Open the iframe URL in a new tab
-            self.driver.execute_script(f"window.open('{iframe_src}', '_blank');")
-
-            # Switch to the new tab
-            self.driver.switch_to.window(self.driver.window_handles[-1])
+            # Navigate with WebDriver rather than window.open(). This avoids
+            # popup/new-tab timing differences between headed and headless Chrome.
+            self.driver.switch_to.new_window("tab")
+            self.driver.get(iframe_src)
 
             print("✅ Opened iframe content in new tab")
 
@@ -221,27 +226,47 @@ class GGPokerScraper:
         """Find the dropdown-layer class and extract all blind level text from list elements"""
         try:
             print("🔍 Looking for dropdown-layer class...")
-
+            time.sleep(2)  # Allow time for the dropdown to render
             dropdown = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "ul.dropdown-layer"))
+                EC.presence_of_element_located((By.CLASS_NAME, "dropdown-layer"))
             )
             print("✅ Found dropdown-layer element")
-            print("aaaaa", dropdown.get_attribute("outerHTML"))
-
-            # all_children_by_css = dropdown.find_elements_by_css_selector("*")
-
-            # Wait a bit more for Angular content to load
-            print("⏳ Waiting for Angular content to load...")
-            time.sleep(3)
-
             # Find all list elements (li) within the dropdown
-            list_elements = dropdown.find_elements(By.TAG_NAME, "li")
+            list_elements = WebDriverWait(self.driver, 30).until(
+                lambda driver: dropdown.find_elements(By.TAG_NAME, "li") or False
+            )
             print(f"📋 Found {len(list_elements)} list elements in dropdown")
+            for i in range(len(list_elements)):
+                text_content = (
+                    list_elements[i].get_attribute("textContent") or ""
+                ).strip()
+                print(f"  {i}: {text_content}")
 
             return list_elements
 
         except Exception as e:
             print(f"❌ Error extracting blind levels from dropdown: {e}")
+            page_source = self.driver.page_source
+            if (
+                "__CF$cv$params" in page_source
+                or "/cdn-cgi/challenge-platform/" in page_source
+            ):
+                print(
+                    "⚠️ Cloudflare challenge detected; pausing scraper for 30 minutes"
+                )
+                time.sleep(30 * 60)
+
+            print(f"   URL: {self.driver.current_url}")
+            print(f"   Title: {self.driver.title}")
+            print(
+                "   Body text: "
+                + self.driver.find_element(By.TAG_NAME, "body")
+                .get_attribute("textContent")[:500]
+                .replace("\n", " ")
+            )
+            dropdowns = self.driver.find_elements(By.CSS_SELECTOR, "ul.dropdown-layer")
+            if dropdowns:
+                print(f"   Dropdown HTML: {dropdowns[0].get_attribute('outerHTML')}")
             return []
 
     def click_through_blind_levels(self, list_elements):
@@ -249,62 +274,67 @@ class GGPokerScraper:
         try:
             print(f"🔄 Starting to click through {len(list_elements)} blind levels...")
 
-            # Find the 'blind-text' class clickable element
-            blind_text_element = WebDriverWait(self.driver, 10).until(
-                EC.element_to_be_clickable((By.CLASS_NAME, "blind-text"))
-            )
-            print(f"  ✅ Found 'blind-text' clickable element")
+            # Angular can replace the dropdown nodes after each selection, so
+            # retain only the count and reacquire live elements on every pass.
+            total_levels = len(list_elements)
 
-            dropdown = self.driver.find_element(By.CLASS_NAME, "dropdown-layer")
-            for i, list_element in enumerate(list_elements):
+            for i in range(total_levels):
                 try:
-                    print(f"\n🖱️ Processing blind level {i}/{len(list_elements)}...")
+                    print(f"\n🖱️ Processing blind level {i}/{total_levels}...")
 
-                    # Get the text content of the current list element
-                    text_content = (
-                        list_element.get_attribute("textContent").strip()
-                        if list_element.get_attribute("textContent")
-                        else ""
+                    blind_text_element = WebDriverWait(self.driver, 15).until(
+                        EC.element_to_be_clickable((By.CLASS_NAME, "blind-text"))
                     )
 
                     # Click on it to open the dropdown
                     print(f"  🖱️ Clicking on 'blind-text' element...")
                     blind_text_element.click()
+                    time.sleep(2)  # Allow time for the dropdown to open
 
-                    # Wait a moment for the dropdown to open
-                    time.sleep(2)
-
-                    # Check if the dropdown now has 'layer-open' class
-                    classes = dropdown.get_attribute("class")
-
-                    if "layer-open" in classes:
-                        print(
-                            f"  ✅ Dropdown opened successfully (has 'layer-open' class)"
+                    WebDriverWait(self.driver, 10).until(
+                        EC.visibility_of_element_located(
+                            (By.CSS_SELECTOR, "ul.dropdown-layer.layer-open")
                         )
-                        print(f"  📋 List elements are now clickable")
-                        # Click on the actual list element
-                        print(f"  🖱️ Clicking on list element {i}...")
+                    )
+                    current_levels = WebDriverWait(self.driver, 10).until(
+                        lambda driver: (
+                            elements
+                            if len(
+                                elements := driver.find_elements(
+                                    By.CSS_SELECTOR,
+                                    "ul.dropdown-layer.layer-open li",
+                                )
+                            )
+                            >= total_levels
+                            else False
+                        )
+                    )
+                    list_element = current_levels[i]
+                    text_content = (
+                        list_element.get_attribute("textContent") or ""
+                    ).strip()
+                    print(f"  🖱️ Clicking on list element {i}...")
+                    self.driver.execute_script(
+                        "arguments[0].scrollIntoView({block: 'center'});", list_element
+                    )
+                    WebDriverWait(self.driver, 20).until(
+                        lambda driver: list_element.is_displayed()
+                        and list_element.is_enabled()
+                    )
+                    list_element.click()
+                    time.sleep(5)
 
-                        list_element.click()
-                        time.sleep(7)
-
-                        # Now extract player ranking data from the table
-                        self.extract_player_ranking_data(text_content)
-
-                    else:
-                        print(f"  ⚠️ Dropdown did not get 'layer-open' class")
-                        print(f"  🔍 Current classes: {classes}")
+                    # Now extract player ranking data from the table
+                    self.extract_player_ranking_data(text_content)
 
                     # Wait a bit before processing next element
-                    time.sleep(2)
+                    time.sleep(12)
 
                 except Exception as e:
                     print(f"  ❌ Error processing blind level {i}: {e}")
                     continue
 
-            print(
-                f"\n✅ Completed clicking through all {len(list_elements)} blind levels"
-            )
+            print(f"\n✅ Completed clicking through all {total_levels} blind levels")
             return True
 
         except Exception as e:
@@ -317,16 +347,28 @@ class GGPokerScraper:
             if game is None:
                 game = self.game_name
             print("    🔍 Looking for playerRankingBody class...")
-
-            # Wait for the player ranking body to be present
-            ranking_body = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "playerRankingBody"))
+            # print("    🔄 Clicking leaderboard refresh button...")
+            # refresh_button = WebDriverWait(self.driver, 10).until(
+            #     EC.element_to_be_clickable((By.CLASS_NAME, "set-refresh"))
+            # )
+            # refresh_button.click()
+            # time.sleep(5)  # Allow time for the table to render after selection
+            # print("waited 5 seconds for table to render")
+            ranking_bodies = self.driver.find_elements(
+                By.CLASS_NAME, "playerRankingBody"
             )
+            if not ranking_bodies:
+                print("    ℹ️ No playerRankingBody found; skipping this blind level")
+                return []
+            ranking_body = ranking_bodies[0]
             print("    ✅ Found playerRankingBody element")
 
             # Find all tr tags within the ranking body
             tr_elements = ranking_body.find_elements(By.TAG_NAME, "tr")
             print(f"    📋 Found {len(tr_elements)} table rows")
+            if not tr_elements:
+                print("    ℹ️ No table rows found; skipping this blind level")
+                return []
 
             # Get timestamp and blind level info
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -342,6 +384,8 @@ class GGPokerScraper:
             # Normalized path: create update batch and resolve leaderboard id
             lb_id = self.db_manager.get_or_create_leaderboard_id(table_name)
             update_id = self.db_manager.create_update_batch(timestamp)
+            inserted_count = 0
+            skipped_count = 0
 
             # Process each player row
             for i, tr in enumerate(tr_elements, 1):
@@ -363,7 +407,7 @@ class GGPokerScraper:
                                 country = country.strip()
                         except Exception:
                             country = None
-                        # print(f"      🔍 Player: {player_name}, Country: {country}")
+
                         points_text = (
                             td_elements[3].get_attribute("textContent").strip()
                             if td_elements[3].get_attribute("textContent")
@@ -371,28 +415,47 @@ class GGPokerScraper:
                         )
 
                         if player_name and points_text:
-                            # Convert points like "1,234.56" to float
                             try:
                                 pts = float(points_text.replace(",", ""))
                             except Exception:
+                                skipped_count += 1
                                 continue
+
+                            if (
+                                i == 1
+                                and self.duplicate_guard == (player_name, pts)
+                                or self.duplicate_guard
+                                == (
+                                    player_name,
+                                    pts + 1,
+                                )  # sometimes the leaderboard doesn't update and the first place points can be off by 1ß
+                            ):
+                                print(
+                                    f"    ⚠️ Duplicate first-place entry detected ({player_name}, {pts}); skipping insertion"
+                                )
+                                return  # Skip the rest of the leaderboard if the first entry is a duplicate
+                            if i == 1:
+                                self.duplicate_guard = (player_name, pts)
+
                             player_id = self.db_manager.get_or_create_player_id(
                                 player_name, country
                             )
                             self.db_manager.insert_fact(
                                 lb_id, update_id, player_id, pts
                             )
+                            inserted_count += 1
                         else:
-                            print(f"      ⚠️ Row {i}: Missing name or points")
+                            skipped_count += 1
                     else:
-                        print(
-                            f"      ⚠️ Row {i}: Not enough td elements ({len(td_elements)})"
-                        )
+                        skipped_count += 1
                 except Exception as e:
                     print(f"      ❌ Error processing row {i}: {e}")
+                    skipped_count += 1
                     continue
 
-            print(f"    ✅ Successfully processed {len(tr_elements)} player entries")
+            print(f"    ✅ Stored {inserted_count} player entries")
+            if skipped_count:
+                print(f"    ℹ️ Skipped {skipped_count} blank or invalid rows")
 
         except Exception as e:
             print(f"    ❌ Error extracting player ranking data: {e}")

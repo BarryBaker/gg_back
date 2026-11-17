@@ -10,6 +10,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     chromium-driver \
+    xvfb \
+    xauth \
     fonts-liberation \
     ca-certificates \
     tzdata \
@@ -28,13 +30,15 @@ COPY . /app
 ENV CHROME_BIN=/usr/bin/chromium \
     CHROME_TYPE=chromium \
     CHROME_DRIVER_BIN=/usr/bin/chromedriver \
+    HEADLESS=0 \
     DB_PATH=/data/ggpoker_leaderboards.db \
     MAX_TS_COLUMNS=0 \
-    INTERVAL=300
+    INTERVAL=100
 
 # Persistent data directory for SQLite
 RUN mkdir -p /data
 
 
-# Run continuously with interval
-CMD ["/bin/sh", "-c", "python ggpoker_scraper.py --interval ${INTERVAL}"]
+# Run headed Chromium inside a virtual display so sites do not receive a
+# Chromium headless runtime fingerprint.
+CMD ["/bin/sh", "-c", "xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' python ggpoker_scraper.py --interval ${INTERVAL}"]

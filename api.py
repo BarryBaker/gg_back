@@ -29,26 +29,31 @@ from psycopg2 import sql
 import sqlite3
 
 
-
 def resolve_db_config():
     """Decide whether to use PostgreSQL or SQLite based on env vars.
     Returns a tuple (driver, conn_info), where driver is 'postgres' or 'sqlite'.
     For postgres, conn_info is a parsed urlparse result; for sqlite, it's a file path.
     """
     load_dotenv()
-    
-    sqlite_path = os.getenv("SQLITE_DB_PATH") or os.getenv("DB_PATH")
-   
+
+    sqlite_path = os.getenv("SQLITE_DB_PATH")
+    if sqlite_path:
+        return ("sqlite", sqlite_path)
+
     pg_url = None
     for key in ("DATABASE_PRIVATE_URL", "DATABASE_URL", "DATABASE_PUBLIC_URL"):
         val = os.getenv(key)
         if val and (val.startswith("postgres://") or val.startswith("postgresql://")):
             pg_url = val
             break
-    if sqlite_path and not pg_url:
-        return ("sqlite", sqlite_path)
+    db_path = os.getenv("DB_PATH")
+    if not pg_url and not db_path:
+        # Local API runs reach the Compose database through the published host port.
+        pg_url = "postgresql://gguser:ggpassword@127.0.0.1:5433/ggpoker"
     if pg_url:
         return ("postgres", urlparse(pg_url))
+    if db_path:
+        return ("sqlite", db_path)
     # default to local sqlite file if nothing provided
     return ("sqlite", os.path.abspath("gg_leaderboards.db"))
 
@@ -79,19 +84,17 @@ def list_tables() -> List[str]:
     with open_connection() as conn:
         cur = conn.cursor()
         if driver == "sqlite":
-            cur.execute(
-                "SELECT name FROM leaderboards ORDER BY name"
-            )
+            cur.execute("SELECT name FROM leaderboards ORDER BY name")
             rows = cur.fetchall()
             return [row["name"] for row in rows]
         # postgres: read from leaderboards table too
-        cur.execute(
-            "SELECT name FROM leaderboards ORDER BY name"
-        )
+        cur.execute("SELECT name FROM leaderboards ORDER BY name")
         return [r[0] for r in cur.fetchall()]
 
 
-def fetch_table_data(leaderboard: str, limit: int, last_columns: int) -> Dict[str, List]:
+def fetch_table_data(
+    leaderboard: str, limit: int, last_columns: int
+) -> Dict[str, List]:
     driver, _ = resolve_db_config()
     if driver == "sqlite":
         with open_connection() as conn:
@@ -126,16 +129,14 @@ def fetch_table_data(leaderboard: str, limit: int, last_columns: int) -> Dict[st
 
             placeholders_updates = ",".join(["?"] * len(update_ids))
             cur.execute(
-                (
-                    f"""
+                (f"""
                     SELECT pl.name, ub.ts, f.points
                     FROM facts f
                     JOIN players pl ON pl.id = f.player_id
                     JOIN update_batch ub ON ub.id = f.update_id
                     WHERE f.leaderboard_id = ?
                       AND f.update_id IN ({placeholders_updates})
-                    """
-                ),
+                    """),
                 [lb_id, *update_ids],
             )
             all_points = cur.fetchall()
@@ -144,7 +145,9 @@ def fetch_table_data(leaderboard: str, limit: int, last_columns: int) -> Dict[st
 
             players = sorted({name for (name, _ts, _pts) in all_points})
 
-            points_map: Dict[str, Dict[str, float]] = {name: {ts: 0 for ts in ts_headers} for name in players}
+            points_map: Dict[str, Dict[str, float]] = {
+                name: {ts: 0 for ts in ts_headers} for name in players
+            }
             for name, ts, pts in all_points:
                 if ts in points_map[name]:
                     points_map[name][ts] = pts
@@ -163,7 +166,9 @@ def fetch_table_data(leaderboard: str, limit: int, last_columns: int) -> Dict[st
         with open_connection() as conn:
             with conn.cursor() as cur:
                 # Resolve leaderboard id
-                cur.execute("SELECT id FROM leaderboards WHERE name = %s", (leaderboard,))
+                cur.execute(
+                    "SELECT id FROM leaderboards WHERE name = %s", (leaderboard,)
+                )
                 row = cur.fetchone()
                 if not row:
                     return {"columns": [], "rows": []}
@@ -207,7 +212,9 @@ def fetch_table_data(leaderboard: str, limit: int, last_columns: int) -> Dict[st
                     return {"columns": ["player"] + ts_headers, "rows": []}
 
                 players = sorted({name for (name, _ts, _pts) in all_points})
-                points_map: Dict[str, Dict[str, float]] = {name: {ts: 0 for ts in ts_headers} for name in players}
+                points_map: Dict[str, Dict[str, float]] = {
+                    name: {ts: 0 for ts in ts_headers} for name in players
+                }
                 for name, ts, pts in all_points:
                     if ts in points_map[name]:
                         points_map[name][ts] = float(pts) if pts is not None else 0
@@ -217,7 +224,9 @@ def fetch_table_data(leaderboard: str, limit: int, last_columns: int) -> Dict[st
                     row = [name] + [points_map[name][ts] for ts in ts_headers]
                     rows.append(row)
 
-                rows.sort(key=lambda r: (r[-1] if r[-1] is not None else 0), reverse=True)
+                rows.sort(
+                    key=lambda r: (r[-1] if r[-1] is not None else 0), reverse=True
+                )
                 rows = rows[:limit]
 
                 return {"columns": ["player"] + ts_headers, "rows": rows}
@@ -258,21 +267,23 @@ def fetch_player_data(leaderboard: str, player_name: str) -> Dict[str, List]:
             )
             updates = cur.fetchall()
             if not updates:
-                return {"columns": ["player"], "rows": [[player_name]], "country": country}
+                return {
+                    "columns": ["player"],
+                    "rows": [[player_name]],
+                    "country": country,
+                }
             update_ids = [u[0] for u in updates]
             ts_headers = [u[1] for u in updates]
 
             # Fetch player's points for those updates
             placeholders = ",".join(["?"] * len(update_ids))
             cur.execute(
-                (
-                    f"""
+                (f"""
                     SELECT f.update_id, f.points
                     FROM facts f
                     JOIN players pl ON pl.id = f.player_id
                     WHERE f.leaderboard_id = ? AND pl.name = ? AND f.update_id IN ({placeholders})
-                    """
-                ),
+                    """),
                 [lb_id, player_name, *update_ids],
             )
             pts_by_update = {uid: 0 for uid in update_ids}
@@ -280,17 +291,29 @@ def fetch_player_data(leaderboard: str, player_name: str) -> Dict[str, List]:
                 pts_by_update[uid] = pts
 
             points_row = [pts_by_update[uid] for uid in update_ids]
-            return {"columns": ["player"] + ts_headers, "rows": [[player_name] + points_row], "country": country}
+            return {
+                "columns": ["player"] + ts_headers,
+                "rows": [[player_name] + points_row],
+                "country": country,
+            }
     else:
         with open_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id FROM leaderboards WHERE name = %s", (leaderboard,))
+                cur.execute(
+                    "SELECT id FROM leaderboards WHERE name = %s", (leaderboard,)
+                )
                 row = cur.fetchone()
                 if not row:
-                    return {"columns": ["player"], "rows": [[player_name]], "country": None}
+                    return {
+                        "columns": ["player"],
+                        "rows": [[player_name]],
+                        "country": None,
+                    }
                 lb_id = row[0]
                 # Fetch country
-                cur.execute("SELECT country FROM players WHERE name = %s", (player_name,))
+                cur.execute(
+                    "SELECT country FROM players WHERE name = %s", (player_name,)
+                )
                 crow = cur.fetchone()
                 country = crow[0] if crow and crow[0] is not None else None
 
@@ -307,7 +330,11 @@ def fetch_player_data(leaderboard: str, player_name: str) -> Dict[str, List]:
                 )
                 updates = cur.fetchall()
                 if not updates:
-                    return {"columns": ["player"], "rows": [[player_name]], "country": country}
+                    return {
+                        "columns": ["player"],
+                        "rows": [[player_name]],
+                        "country": country,
+                    }
                 update_ids = [u[0] for u in updates]
                 ts_headers = [u[1] for u in updates]
                 in_ph = ",".join(["%s"] * len(update_ids))
@@ -324,7 +351,11 @@ def fetch_player_data(leaderboard: str, player_name: str) -> Dict[str, List]:
                 for uid, pts in cur.fetchall():
                     pts_by_update[uid] = float(pts) if pts is not None else 0
                 points_row = [pts_by_update[uid] for uid in update_ids]
-                return {"columns": ["player"] + ts_headers, "rows": [[player_name] + points_row], "country": country}
+                return {
+                    "columns": ["player"] + ts_headers,
+                    "rows": [[player_name] + points_row],
+                    "country": country,
+                }
 
 
 def fetch_top_players(leaderboard: str, limit: int = 50) -> List[str]:
@@ -363,7 +394,9 @@ def fetch_top_players(leaderboard: str, limit: int = 50) -> List[str]:
     else:
         with open_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id FROM leaderboards WHERE name = %s", (leaderboard,))
+                cur.execute(
+                    "SELECT id FROM leaderboards WHERE name = %s", (leaderboard,)
+                )
                 row = cur.fetchone()
                 if not row:
                     return []
@@ -393,7 +426,6 @@ def fetch_top_players(leaderboard: str, limit: int = 50) -> List[str]:
                 return [r[0] for r in rows]
 
 
-
 app = Flask(__name__)
 CORS(app)
 
@@ -413,16 +445,17 @@ def api_tables():
 
 @app.get("/tables/<leaderboard>/data")
 def api_table_data(leaderboard: str):
-    
-    try: 
+
+    try:
         # Defaults: last_columns=10, limit=15
         limit = int(request.args.get("limit", 16))
         last_cols = int(request.args.get("columns", 4))
-        
+
         payload = fetch_table_data(leaderboard, limit=limit, last_columns=last_cols)
         return jsonify(payload)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 @app.get("/tables/<table>/player")
 def api_table_player(table: str):
@@ -447,11 +480,8 @@ def api_top_players(table: str):
         return jsonify({"error": str(e)}), 500
 
 
-
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8000"))
     debug_env = (os.getenv("FLASK_DEBUG") or os.getenv("DEBUG") or "").lower()
     debug = debug_env in ("1", "true", "yes", "on", "dev", "development")
     app.run(host="0.0.0.0", port=port, debug=debug)
-
-

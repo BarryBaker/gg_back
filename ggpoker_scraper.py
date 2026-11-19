@@ -139,7 +139,7 @@ class GGPokerScraper:
             print(f"❌ Error accessing page: {e}")
             return False
 
-    def find_plo_section(self):
+    def find_game_name_section(self):
         """Find the target game section with the iframe"""
         try:
             # Look for the exact game heading (env GAME_NAME)
@@ -252,9 +252,9 @@ class GGPokerScraper:
                 or "/cdn-cgi/challenge-platform/" in page_source
             ):
                 print(
-                    "⚠️ Cloudflare challenge detected; pausing scraper for 30 minutes"
+                    "⚠️ Cloudflare challenge detected; pausing scraper for 45 minutes"
                 )
-                time.sleep(30 * 60)
+                time.sleep(45 * 60)
 
             print(f"   URL: {self.driver.current_url}")
             print(f"   Title: {self.driver.title}")
@@ -328,7 +328,7 @@ class GGPokerScraper:
                     self.extract_player_ranking_data(text_content)
 
                     # Wait a bit before processing next element
-                    time.sleep(12)
+                    time.sleep(16)
 
                 except Exception as e:
                     print(f"  ❌ Error processing blind level {i}: {e}")
@@ -473,8 +473,8 @@ class GGPokerScraper:
             if not self.access_ggpoker_page():
                 return False
 
-            # Step 2: Find the PLO section and iframe
-            iframe, iframe_src = self.find_plo_section()
+            # Step 2: Find the game name section and iframe
+            iframe, iframe_src = self.find_game_name_section()
             if not iframe:
                 return False
 

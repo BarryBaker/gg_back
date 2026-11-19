@@ -18,6 +18,7 @@ Notes:
 """
 
 import os
+from decimal import Decimal
 from typing import Dict, List, Tuple
 from urllib.parse import urlparse
 
@@ -233,132 +234,126 @@ def fetch_table_data(
 
 
 def fetch_player_data(leaderboard: str, player_name: str) -> Dict[str, List]:
-    """Return pivoted data for a player across ALL updates of the given leaderboard.
-    Columns: [player, ts1..tsN] oldest→newest; Row: [name, points...] with 0 for missing.
-    Includes 'country' of the player.
-    """
+    """ """
+
     driver, _ = resolve_db_config()
-    if driver == "sqlite":
-        with open_connection() as conn:
-            cur = conn.cursor()
-            # Resolve leaderboard id
-            cur.execute("SELECT id FROM leaderboards WHERE name = ?", (leaderboard,))
-            row = cur.fetchone()
-            if not row:
-                return {"columns": ["player"], "rows": [[player_name]], "country": None}
-            lb_id = row[0]
+
+    with open_connection() as conn:
+        with conn.cursor() as cur:
 
             # Fetch country
-            cur.execute("SELECT country FROM players WHERE name = ?", (player_name,))
+            cur.execute("SELECT country FROM players WHERE name = %s", (player_name,))
             crow = cur.fetchone()
             country = crow[0] if crow and crow[0] is not None else None
 
-            # Get all update ids and timestamps for this leaderboard (only those that appear in facts)
-            cur.execute(
-                """
-                SELECT ub.id, ub.ts
-                FROM update_batch ub
-                JOIN facts f ON f.update_id = ub.id
-                WHERE f.leaderboard_id = ?
-                GROUP BY ub.id, ub.ts
-                ORDER BY ub.id ASC
-                """,
-                (lb_id,),
-            )
+            try:
+                cur.execute(
+                    """               with sec as (
+                                          select l.name as leaderboard,
+                                            to_char(timezone('UTC', ts), 'YYYY-MM-DD HH24:MI:SS') as time,ub.id,timezone('UTC', ts),
+                                            DATE_TRUNC('day',timezone('UTC', ts) - INTERVAL '8 hours') as start_day,
+                                            EXTRACT(epoch FROM 
+                                                timezone('UTC', ts) - (DATE_TRUNC('day',timezone('UTC', ts) - INTERVAL '8 hours')+ INTERVAL '8 hours'))
+                                                as secs,
+                                            p.name as name ,country,points 
+                                            from facts 
+                                            join players p  on player_id  = p.id 
+                                            join update_batch ub on update_id =ub.id
+                                            join leaderboards l on leaderboard_id =l.id
+                                            where p.name = %s and l.name = %s
+                                            order by ub.id desc,points desc),
+                                        windows as (
+                                        select
+                                          	name,country,time,start_day,points ,secs, 
+                                            LEAD(secs,1,0) OVER (ORDER BY time DESC) as secs_before,
+                                            LEAD(points,1,0) OVER (ORDER BY time DESC) as points_before,
+                                            LEAD(start_day,1,TIMESTAMP '1970-01-01 00:00:00') OVER (ORDER BY time DESC) as day_before
+                                        from sec
+                                        where secs>120
+                                        ),
+                                        diffs as
+                                         (
+                                        select 
+                                            name,country,time,start_day,points ,secs/86400 as secs, 
+                                            CASE
+                                            WHEN start_day != day_before THEN 0
+                                            ELSE secs_before/86400
+                                            END AS secs_before,
+                                            secs - secs_before AS sec_diff,
+                                            CASE
+                                            WHEN start_day != day_before THEN points
+                                            ELSE points - points_before
+                                            END AS point_diff
+                                        from windows
+                                        )
+                                        select 
+                                            timezone('UTC', start_day)::date as day,points,secs,secs_before,point_diff
+                                        from diffs
+                                        where secs>0.00138
+                                        order by day,secs_before
+                                        """,
+                    (player_name, leaderboard),
+                )
+            except Exception as e:
+                print("Error executing query:", e)
+                raise
+
             updates = cur.fetchall()
+            print(f"Fetched {len(updates)} updates for leaderboard '{leaderboard}'")
+            result = {}
+
+            for i in updates:
+                try:
+                    if any(i[j] is None for j in range(len(i))):
+                        print("Skipping update with None value:", i)
+                        continue
+
+                    day = i[0].isoformat()
+                    points = int(i[1])
+
+                    interval_start = float(i[3])
+                    interval_end = float(i[2])
+                    point_diff = int(i[4])
+                    if day not in result:
+                        result[day] = [
+                            {
+                                "points": points,
+                                "interval_start": interval_start,
+                                "interval_end": interval_end,
+                                "point_diff": point_diff,
+                            }
+                        ]
+                    else:
+                        result[day].append(
+                            {
+                                "points": points,
+                                "interval_start": interval_start,
+                                "interval_end": interval_end,
+                                "point_diff": point_diff,
+                            }
+                        )
+                except Exception as e:
+                    print(i)
+                    print("Error processing updates:", e)
+                    raise
+
+            # print("updates", result)
             if not updates:
                 return {
-                    "columns": ["player"],
-                    "rows": [[player_name]],
+                    "player": player_name,
                     "country": country,
+                    "datapoints": result,
                 }
-            update_ids = [u[0] for u in updates]
-            ts_headers = [u[1] for u in updates]
 
-            # Fetch player's points for those updates
-            placeholders = ",".join(["?"] * len(update_ids))
-            cur.execute(
-                (f"""
-                    SELECT f.update_id, f.points
-                    FROM facts f
-                    JOIN players pl ON pl.id = f.player_id
-                    WHERE f.leaderboard_id = ? AND pl.name = ? AND f.update_id IN ({placeholders})
-                    """),
-                [lb_id, player_name, *update_ids],
-            )
-            pts_by_update = {uid: 0 for uid in update_ids}
-            for uid, pts in cur.fetchall():
-                pts_by_update[uid] = pts
-
-            points_row = [pts_by_update[uid] for uid in update_ids]
             return {
-                "columns": ["player"] + ts_headers,
-                "rows": [[player_name] + points_row],
+                "player": player_name,
                 "country": country,
+                "datapoints": result,
             }
-    else:
-        with open_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT id FROM leaderboards WHERE name = %s", (leaderboard,)
-                )
-                row = cur.fetchone()
-                if not row:
-                    return {
-                        "columns": ["player"],
-                        "rows": [[player_name]],
-                        "country": None,
-                    }
-                lb_id = row[0]
-                # Fetch country
-                cur.execute(
-                    "SELECT country FROM players WHERE name = %s", (player_name,)
-                )
-                crow = cur.fetchone()
-                country = crow[0] if crow and crow[0] is not None else None
-
-                cur.execute(
-                    """
-                    SELECT ub.id, ub.ts
-                    FROM update_batch ub
-                    JOIN facts f ON f.update_id = ub.id
-                    WHERE f.leaderboard_id = %s
-                    GROUP BY ub.id, ub.ts
-                    ORDER BY ub.id ASC
-                    """,
-                    (lb_id,),
-                )
-                updates = cur.fetchall()
-                if not updates:
-                    return {
-                        "columns": ["player"],
-                        "rows": [[player_name]],
-                        "country": country,
-                    }
-                update_ids = [u[0] for u in updates]
-                ts_headers = [u[1] for u in updates]
-                in_ph = ",".join(["%s"] * len(update_ids))
-                cur.execute(
-                    f"""
-                    SELECT f.update_id, f.points
-                    FROM facts f
-                    JOIN players pl ON pl.id = f.player_id
-                    WHERE f.leaderboard_id = %s AND pl.name = %s AND f.update_id IN ({in_ph})
-                    """,
-                    tuple([lb_id, player_name] + update_ids),
-                )
-                pts_by_update = {uid: 0 for uid in update_ids}
-                for uid, pts in cur.fetchall():
-                    pts_by_update[uid] = float(pts) if pts is not None else 0
-                points_row = [pts_by_update[uid] for uid in update_ids]
-                return {
-                    "columns": ["player"] + ts_headers,
-                    "rows": [[player_name] + points_row],
-                    "country": country,
-                }
 
 
 def fetch_top_players(leaderboard: str, limit: int = 50) -> List[str]:
+
     driver, _ = resolve_db_config()
     if driver == "sqlite":
         with open_connection() as conn:

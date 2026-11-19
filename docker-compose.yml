@@ -8,7 +8,7 @@ x-scraper: &scraper
     postgres:
       condition: service_healthy
   environment: &scraper-env
-    INTERVAL: "30"
+    INTERVAL: "40"
     MAX_TS_COLUMNS: "8760"
     DATABASE_URL: "postgresql://gguser:ggpassword@postgres:5432/ggpoker"
     HEADLESS: "0"
@@ -74,6 +74,46 @@ services:
       <<: *scraper-env
       GAME_NAME: 9Max (Ante) Games
       PROMO_URL: "https://ggpoker.com/poker-promotions/holdem-daily-leaderboard/"
+
+  scraper_holdem-rush:
+    <<: *scraper
+    container_name: gg_scraper_holdem-rush
+    environment:
+      <<: *scraper-env
+      GAME_NAME: Hold’em
+      PROMO_URL: "https://ggpoker.com/poker-promotions/rush-cash-daily-leaderboard/"
+
+  scraper_plo-rush:
+    <<: *scraper
+    container_name: gg_scraper_plo-rush
+    environment:
+      <<: *scraper-env
+      GAME_NAME: Omaha
+      PROMO_URL: "https://ggpoker.com/poker-promotions/rush-cash-daily-leaderboard/"
+
+  # scraper_holdem_aof:
+  #   <<: *scraper
+  #   container_name: gg_scraper_holdem_aof
+  #   environment:
+  #     <<: *scraper-env
+  #     GAME_NAME: Hold'em
+  #     PROMO_URL: "https://ggpoker.com/poker-promotions/aof-daily-leaderboard/"
+
+  # scraper_plo_aof:
+  #   <<: *scraper
+  #   container_name: gg_scraper_plo_aof
+  #   environment:
+  #     <<: *scraper-env
+  #     GAME_NAME: Omaha
+  #     PROMO_URL: "https://ggpoker.com/poker-promotions/aof-daily-leaderboard/"
+
+  # scraper_spin_gold:
+  #   <<: *scraper
+  #   container_name: gg_scraper_spin_gold
+  #   environment:
+  #     <<: *scraper-env
+  #     GAME_NAME: 3MAX and 6MAX will share a single leaderboard.
+  #     PROMO_URL: "https://ggpoker.com/poker-promotions/spin-gold-daily-leaderboard/"
 
   api:
     build: .

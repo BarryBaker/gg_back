@@ -8,7 +8,6 @@ x-scraper: &scraper
     postgres:
       condition: service_healthy
   environment: &scraper-env
-    INTERVAL: "40"
     MAX_TS_COLUMNS: "8760"
     DATABASE_URL: "postgresql://gguser:ggpassword@postgres:5432/ggpoker"
     HEADLESS: "0"
@@ -42,6 +41,10 @@ services:
       <<: *scraper-env
       GAME_NAME: PLO
       PROMO_URL: "https://ggpoker.com/poker-promotions/omaha-daily-leaderboard/"
+      TABLE_NAME: ""
+      INTERVAL_BEFORE: "1"
+      INTERVAL_AFTER: "120"
+      SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
   scraper_plo-5:
     <<: *scraper
@@ -50,6 +53,10 @@ services:
       <<: *scraper-env
       GAME_NAME: PLO-5
       PROMO_URL: "https://ggpoker.com/poker-promotions/omaha-daily-leaderboard/"
+      TABLE_NAME: ""
+      INTERVAL_BEFORE: "31"
+      INTERVAL_AFTER: "90"
+      SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
   scraper_plo-6:
     <<: *scraper
@@ -58,6 +65,10 @@ services:
       <<: *scraper-env
       GAME_NAME: PLO-6
       PROMO_URL: "https://ggpoker.com/poker-promotions/omaha-daily-leaderboard/"
+      TABLE_NAME: ""
+      INTERVAL_BEFORE: "21"
+      INTERVAL_AFTER: "100"
+      SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
   scraper_holdem:
     <<: *scraper
@@ -66,7 +77,10 @@ services:
       <<: *scraper-env
       GAME_NAME: Hold'em
       PROMO_URL: "https://ggpoker.com/poker-promotions/holdem-daily-leaderboard/"
-
+      TABLE_NAME: ""
+      INTERVAL_BEFORE: "15"
+      INTERVAL_AFTER: "115"
+      SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
   scraper_holdem-9:
     <<: *scraper
     container_name: gg_scraper_holdem-9
@@ -74,6 +88,10 @@ services:
       <<: *scraper-env
       GAME_NAME: 9Max (Ante) Games
       PROMO_URL: "https://ggpoker.com/poker-promotions/holdem-daily-leaderboard/"
+      TABLE_NAME: ""
+      INTERVAL_BEFORE: "35"
+      INTERVAL_AFTER: "95"
+      SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
   scraper_holdem-rush:
     <<: *scraper
@@ -82,6 +100,10 @@ services:
       <<: *scraper-env
       GAME_NAME: Hold’em
       PROMO_URL: "https://ggpoker.com/poker-promotions/rush-cash-daily-leaderboard/"
+      TABLE_NAME: "RUSH"
+      INTERVAL_BEFORE: "70"
+      INTERVAL_AFTER: "60"
+      SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
   scraper_plo-rush:
     <<: *scraper
@@ -90,6 +112,10 @@ services:
       <<: *scraper-env
       GAME_NAME: Omaha
       PROMO_URL: "https://ggpoker.com/poker-promotions/rush-cash-daily-leaderboard/"
+      TABLE_NAME: "RUSH"
+      INTERVAL_BEFORE: "90"
+      INTERVAL_AFTER: "50"
+      SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
   # scraper_holdem_aof:
   #   <<: *scraper
@@ -98,6 +124,10 @@ services:
   #     <<: *scraper-env
   #     GAME_NAME: Hold'em
   #     PROMO_URL: "https://ggpoker.com/poker-promotions/aof-daily-leaderboard/"
+  #     TABLE_NAME: "AOF"
+  #     INTERVAL_AFTER: "50"
+  #     INTERVAL_BEFORE: "80"
+  #     SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
   # scraper_plo_aof:
   #   <<: *scraper
@@ -106,6 +136,10 @@ services:
   #     <<: *scraper-env
   #     GAME_NAME: Omaha
   #     PROMO_URL: "https://ggpoker.com/poker-promotions/aof-daily-leaderboard/"
+  #     TABLE_NAME: "AOF"
+  #     INTERVAL_BEFORE: "100"
+  #     INTERVAL_AFTER: "30"
+  #     SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
   # scraper_spin_gold:
   #   <<: *scraper
@@ -114,6 +148,7 @@ services:
   #     <<: *scraper-env
   #     GAME_NAME: 3MAX and 6MAX will share a single leaderboard.
   #     PROMO_URL: "https://ggpoker.com/poker-promotions/spin-gold-daily-leaderboard/"
+  #     TABLE_NAME: "SPIN_GOLD"
 
   api:
     build: .

@@ -52,7 +52,14 @@ class GGPokerScraper:
             "PROMO_URL", "https://ggpoker.com/poker-promotions/omaha-daily-leaderboard/"
         )
         self.game_name = os.getenv("GAME_NAME", "PLO").strip()
-
+        self.table_name = os.getenv("TABLE_NAME", "").strip()
+        self.sleeptime_before_next_blindlevel = int(
+            os.getenv("SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL", 12)
+        )
+        # self.sleeptime_before_next_run = int(
+        #     os.getenv("SLEEP_TIME_BEFORE_NEXT_RUN", 20)
+        # )
+        # self.sleeptime_after_run = int(os.getenv("SLEEP_TIME_AFTER_RUN", 20))
         # Initialize database manager
         self.db_manager = DatabaseManager()
         print("✅ Database manager initialized")
@@ -145,7 +152,7 @@ class GGPokerScraper:
             # Look for the exact game heading (env GAME_NAME)
             name_literal = self._build_xpath_literal(self.game_name)
             heading_xpath = f"//h4[normalize-space(text())={name_literal}]"
-            game_heading = WebDriverWait(self.driver, 10).until(
+            WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.XPATH, heading_xpath))
             )
             print(f"✅ Found {self.game_name} section heading")
@@ -161,66 +168,11 @@ class GGPokerScraper:
 
             print("✅ Found matching iframe under heading")
 
-            # Get the iframe source URL
-            iframe_src = iframe.get_attribute("src")
-            print(f"🔗 Iframe source URL: {iframe_src}")
-
-            return iframe, iframe_src
+            return iframe
 
         except Exception as e:
             print(f"❌ Error finding {self.game_name} section: {e}")
-            return None, None
-
-    def click_iframe_link(self, iframe):
-        """Click on the iframe to interact with it"""
-        try:
-            print("🖱️ Clicking on iframe...")
-
-            # Scroll to the iframe to make it visible
-            self.driver.execute_script("arguments[0].scrollIntoView(true);", iframe)
-            time.sleep(1)
-
-            # Click on the iframe
-            iframe.click()
-            print("✅ Clicked on iframe")
-
-            # Wait a moment to see if anything happens
-            time.sleep(2)
-
-            return True
-
-        except Exception as e:
-            print(f"❌ Error clicking iframe: {e}")
-            return False
-
-    def explore_iframe_content(self, iframe_src):
-        """Explore the iframe content by navigating to its source URL"""
-        try:
-            print(f"🔍 Exploring iframe content at: {iframe_src}")
-
-            # Navigate with WebDriver rather than window.open(). This avoids
-            # popup/new-tab timing differences between headed and headless Chrome.
-            self.driver.switch_to.new_window("tab")
-            self.driver.get(iframe_src)
-
-            print("✅ Opened iframe content in new tab")
-
-            # Wait for the Angular app and its rendered DOM to load.
-            WebDriverWait(self.driver, 30).until(
-                lambda driver: driver.execute_script("return document.readyState")
-                == "complete"
-            )
-            WebDriverWait(self.driver, 30).until(
-                EC.presence_of_element_located(
-                    (By.CSS_SELECTOR, "app-promotion-leaderboard-group")
-                )
-            )
-
-            return True
-
-        except Exception as e:
-            print(f"❌ Error exploring iframe content: {e}")
-            return False
+            return None
 
     def get_blind_levels_from_dropdown(self):
         """Find the dropdown-layer class and extract all blind level text from list elements"""
@@ -252,9 +204,9 @@ class GGPokerScraper:
                 or "/cdn-cgi/challenge-platform/" in page_source
             ):
                 print(
-                    "⚠️ Cloudflare challenge detected; pausing scraper for 45 minutes"
+                    "⚠️ Cloudflare challenge detected; pausing scraper for 65 minutes"
                 )
-                time.sleep(45 * 60)
+                time.sleep(65 * 60)
 
             print(f"   URL: {self.driver.current_url}")
             print(f"   Title: {self.driver.title}")
@@ -328,7 +280,7 @@ class GGPokerScraper:
                     self.extract_player_ranking_data(text_content)
 
                     # Wait a bit before processing next element
-                    time.sleep(16)
+                    time.sleep(self.sleeptime_before_next_blindlevel)
 
                 except Exception as e:
                     print(f"  ❌ Error processing blind level {i}: {e}")
@@ -377,8 +329,10 @@ class GGPokerScraper:
             # Extract blind level from text_content (e.g., "$0.01/$0.02")
             blind_level = text_content.strip()
 
-            # Build leaderboard name (same as before via DB manager sanitizer)
-            table_name = self.db_manager.get_leaderboard_table_name(game, blind_level)
+            leaderboard_game = f"{game}_{self.table_name}" if self.table_name else game
+            table_name = self.db_manager.get_leaderboard_table_name(
+                leaderboard_game, blind_level
+            )
             print(f"   Table name: {table_name}")
 
             # Normalized path: create update batch and resolve leaderboard id
@@ -469,47 +423,38 @@ class GGPokerScraper:
         try:
             print("🚀 Starting GGPoker scraping session...")
 
-            # Step 1: Access the main page
             if not self.access_ggpoker_page():
                 return False
 
-            # Step 2: Find the game name section and iframe
-            iframe, iframe_src = self.find_game_name_section()
-            if not iframe:
+            iframe = self.find_game_name_section()
+            if iframe is None:
                 return False
 
-            # Step 3: Click on the iframe
-            if not self.click_iframe_link(iframe):
-                return False
+            WebDriverWait(self.driver, 10).until(
+                EC.frame_to_be_available_and_switch_to_it(iframe)
+            )
+            print("✅ Switched into the leaderboard iframe")
+            try:
+                print("\n🎯 Now extracting blind levels from dropdown...")
+                list_elements = self.get_blind_levels_from_dropdown()
 
-            # Step 4: Explore the iframe content
-            if iframe_src:
-                if not self.explore_iframe_content(iframe_src):
-                    return False
-
-            # Step 5: Extract blind levels from the dropdown
-            print("\n🎯 Now extracting blind levels from dropdown...")
-            list_elements = self.get_blind_levels_from_dropdown()
-
-            if list_elements:
-                print(f"\n🎉 Successfully found {len(list_elements)} list elements!")
-
-                # Step 6: Click through all blind levels to make them clickable
-                print("\n🔄 Now clicking through all blind levels...")
-                if self.click_through_blind_levels(list_elements):
-                    print("✅ Successfully clicked through all blind levels")
+                if list_elements:
+                    print(
+                        f"\n🎉 Successfully found {len(list_elements)} list elements!"
+                    )
+                    print("\n🔄 Now clicking through all blind levels...")
+                    if self.click_through_blind_levels(list_elements):
+                        print("✅ Successfully clicked through all blind levels")
+                    else:
+                        print(
+                            "⚠️ Some issues occurred while clicking through blind levels"
+                        )
                 else:
-                    print("⚠️ Some issues occurred while clicking through blind levels")
-
-            else:
-                print("⚠️ No list elements found in dropdown")
+                    print("⚠️ No list elements found in dropdown")
+            finally:
+                self.driver.switch_to.default_content()
 
             print("\n✅ Scraping session completed successfully!")
-            print("\n📋 Next steps:")
-            print("1. Blind levels have been extracted and printed above")
-            print("2. You can manually explore the iframe content further")
-            print("3. Let me know what data you want to extract next")
-
             return True
 
         except Exception as e:
@@ -532,12 +477,19 @@ def main():
     parser.add_argument(
         "--headless", action="store_true", help="Run Chrome in headless mode"
     )
-    default_interval = int(os.getenv("INTERVAL", "0"))
+    default_interval_before = int(os.getenv("INTERVAL_BEFORE", "1"))
+    default_interval_after = int(os.getenv("INTERVAL_AFTER", "25"))
     parser.add_argument(
-        "--interval",
+        "--interval_before",
         type=int,
-        default=default_interval,
-        help="Seconds between runs; 0 runs once",
+        default=default_interval_before,
+        help="Seconds before each run; 0 runs once",
+    )
+    parser.add_argument(
+        "--interval_after",
+        type=int,
+        default=default_interval_after,
+        help="Seconds after each run; 0 runs once",
     )
     args = parser.parse_args()
 
@@ -556,18 +508,25 @@ def main():
             if scraper:
                 scraper.close()
 
-    if args.interval and args.interval > 0:
-        print(f"🔁 Running every {args.interval} seconds. Press Ctrl+C to stop.")
+    if args.interval_before and args.interval_after:
+        print(
+            f"🔁 Running with {args.interval_before} seconds before and {args.interval_after} seconds after each run. Press Ctrl+C to stop."
+        )
         try:
             while True:
+                print(
+                    f"\n⏳ Sleeping {args.interval_before} seconds before next run..."
+                )
+                time.sleep(args.interval_before)
                 start_ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 print(f"\n⏱️ {start_ts} - Starting run")
                 run_once(args.headless)
-                print(f"⏳ Sleeping {args.interval} seconds...")
-                time.sleep(args.interval)
+                print(f"⏳ Sleeping {args.interval_after} seconds...")
+                time.sleep(args.interval_after)
         except KeyboardInterrupt:
             print("\n⏹️ Stopped by user")
     else:
+        print("⏱️ Running once with no intervals...")
         run_once(args.headless)
 
 

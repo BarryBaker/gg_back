@@ -22,6 +22,7 @@ x-scraper: &scraper
 services:
   postgres:
     image: postgres:16
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ggpoker
       POSTGRES_USER: gguser
@@ -156,7 +157,7 @@ services:
     build: .
     image: gg-api:latest
     container_name: gg_api
-    command: python api.py
+    command: python serve.py
     depends_on:
       postgres:
         condition: service_healthy
@@ -167,7 +168,7 @@ services:
       DATABASE_PUBLIC_URL: "${DATABASE_PUBLIC_URL:-}"
       PORT: "8000"
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     restart: unless-stopped
 
 volumes:

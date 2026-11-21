@@ -104,8 +104,8 @@ facts(leaderboard_id, update_id, player_id, points,
 Viewers
 
 - Local SQLite: `python view_database.py`
-- Remote PostgreSQL (Railway, etc.):
-  1. copy `env_template.txt` → `.env` and set `DATABASE_URL`
+- Remote PostgreSQL:
+  1. Set `DATABASE_URL` in `.env` using the format in `env_template.txt`.
   2. `python view_remote_database.py`
 
 ## Configuration (Environment)

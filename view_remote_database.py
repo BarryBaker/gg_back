@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Remote PostgreSQL Database Viewer for GGPoker Leaderboards
-Connects to Railway PostgreSQL and displays tables with last 10 columns
+Connects to PostgreSQL and displays table details and recent rows
 """
 
 import os
@@ -23,7 +23,7 @@ class RemoteDatabaseViewer:
         
         if not self.database_url:
             print("❌ DATABASE_URL environment variable not found!")
-            print("Please set your Railway PostgreSQL connection string in DATABASE_URL")
+            print("Please set your PostgreSQL connection string in DATABASE_URL")
             sys.exit(1)
             
         if not (self.database_url.startswith('postgres://') or self.database_url.startswith('postgresql://')):
@@ -37,6 +37,7 @@ class RemoteDatabaseViewer:
         try:
             # Parse the DATABASE_URL
             url = urlparse(self.database_url)
+            database_name = url.path[1:] or url.username
             
             # Debug: Print parsed URL components
             print(f"🔍 Parsed URL components:")
@@ -46,19 +47,19 @@ class RemoteDatabaseViewer:
             print(f"   Hostname: {url.hostname}")
             print(f"   Port: {url.port}")
             print(f"   Path: {url.path}")
-            print(f"   Database name: {url.path[1:] if url.path else 'railway'}")
+            print(f"   Database name: {database_name or '(default)'}")
             print()
             
             # Connect to PostgreSQL
             self.connection = psycopg2.connect(
                 host=url.hostname,
                 port=url.port or 5432,
-                database=url.path[1:] if url.path else 'railway',  # Remove leading slash or default to 'railway'
+                database=database_name,
                 user=url.username,
                 password=url.password
             )
             
-            print(f"✅ Connected to PostgreSQL database: {url.path[1:] if url.path else 'railway'}")
+            print(f"✅ Connected to PostgreSQL database: {self.connection.info.dbname}")
             print(f"📍 Host: {url.hostname}:{url.port or 5432}")
             print(f"👤 User: {url.username}")
             print()

@@ -15,7 +15,7 @@ class DatabaseManager:
         Initialize database manager - auto-detects environment
         """
         sqlite_path = db_path or os.getenv("SQLITE_DB_PATH")
-        # Check if we're in cloud (Railway/Render) or local
+        # Read the PostgreSQL connection URL if configured.
         self.database_url = os.getenv('DATABASE_URL')
         
         if (

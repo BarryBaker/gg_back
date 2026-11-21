@@ -1,10 +1,10 @@
 # Remote PostgreSQL Database Viewer
 
-This tool connects to your Railway PostgreSQL database and provides an interactive way to explore your GGPoker leaderboard data.
+This tool connects to a PostgreSQL database and provides an interactive way to explore your GGPoker leaderboard data.
 
 ## Features
 
-- 🔌 **Remote Connection**: Connects directly to your Railway PostgreSQL database
+- 🔌 **Remote Connection**: Connects directly to your PostgreSQL database
 - 📊 **Table Overview**: Shows all tables with row counts and column counts
 - 🗂️ **Structure Analysis**: Displays detailed table structure (column names, types, constraints)
 - 📈 **Sample Data**: Shows the last 10 rows from each table (ordered by most recent)
@@ -18,18 +18,10 @@ This tool connects to your Railway PostgreSQL database and provides an interacti
    pip install -r requirements.txt
    ```
 
-2. **Set Environment Variable**:
-   - Copy `env_template.txt` to `.env`
-   - Add your Railway PostgreSQL connection string:
+2. **Set `DATABASE_URL`** in `.env` using your PostgreSQL connection string.
    ```bash
    DATABASE_URL=postgresql://username:password@hostname:port/database_name
    ```
-
-3. **Get Your Railway Database URL**:
-   - Go to your Railway project dashboard
-   - Click on your PostgreSQL service
-   - Go to "Connect" tab
-   - Copy the "Postgres Connection URL"
 
 ## Usage
 
@@ -70,12 +62,11 @@ python view_remote_database.py
 
 ## Troubleshooting
 
-- **Connection Error**: Verify your `DATABASE_URL` is correct and Railway service is running
+- **Connection Error**: Verify your `DATABASE_URL` is correct and PostgreSQL is running
 - **Missing psycopg2**: Run `pip install psycopg2-binary`
-- **Permission Issues**: Ensure your Railway database user has proper access rights
+- **Permission Issues**: Ensure your database user has proper access rights
 
 ## Security Notes
 
 - Never commit your `.env` file to version control
 - The `DATABASE_URL` contains sensitive credentials
-- Use Railway's built-in security features for production deployments

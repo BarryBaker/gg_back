@@ -1,5 +1,7 @@
 # Remove the "version: '3.9'" line from docker-compose.yml
 
+x-postgres-url: &postgres-url "postgresql://gguser:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/ggpoker"
+
 x-scraper: &scraper
   build: .
   image: gg-scraper:latest
@@ -9,7 +11,7 @@ x-scraper: &scraper
       condition: service_healthy
   environment: &scraper-env
     MAX_TS_COLUMNS: "8760"
-    DATABASE_URL: "postgresql://gguser:ggpassword@postgres:5432/ggpoker"
+    DATABASE_URL: *postgres-url
     HEADLESS: "0"
     CHROME_BIN: /usr/bin/chromium
     CHROME_TYPE: chromium
@@ -23,7 +25,7 @@ services:
     environment:
       POSTGRES_DB: ggpoker
       POSTGRES_USER: gguser
-      POSTGRES_PASSWORD: ggpassword
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
     ports:
       - "127.0.0.1:5433:5432"
     volumes:
@@ -160,10 +162,10 @@ services:
         condition: service_healthy
     environment:
       # Prefer private DB URL if available; fallback to DATABASE_URL or public
-      - DATABASE_PRIVATE_URL=${DATABASE_PRIVATE_URL:-}
-      - DATABASE_URL=postgresql://gguser:ggpassword@postgres:5432/ggpoker
-      - DATABASE_PUBLIC_URL=${DATABASE_PUBLIC_URL:-}
-      - PORT=8000
+      DATABASE_PRIVATE_URL: "${DATABASE_PRIVATE_URL:-}"
+      DATABASE_URL: *postgres-url
+      DATABASE_PUBLIC_URL: "${DATABASE_PUBLIC_URL:-}"
+      PORT: "8000"
     ports:
       - "8000:8000"
     restart: unless-stopped

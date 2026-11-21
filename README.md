@@ -125,7 +125,7 @@ Database
 - `DATABASE_PUBLIC_URL` → last fallback for the API
 - `SQLITE_DB_PATH` → explicitly use this SQLite file, taking precedence over PostgreSQL URLs
 - `DB_PATH` → SQLite file path when PostgreSQL is not selected (default: `ggpoker_leaderboards.db`)
-- Local Docker PostgreSQL defaults to `postgresql://gguser:ggpassword@postgres:5432/ggpoker`
+- In Docker Compose, the API and scrapers connect to `postgres:5432` as `gguser` using `POSTGRES_PASSWORD`.
 
 API
 
@@ -139,15 +139,28 @@ We provide three services in `docker-compose.yml`:
 - `scraper`: runs continuously and writes to PostgreSQL
 - `api`: exposes HTTP API on port `8000`
 
+Set `POSTGRES_PASSWORD` in an untracked `.env` file next to `docker-compose.yml`.
+For a new database, generate a URL-safe password with `openssl rand -hex 32`.
+Compose uses the same password to initialize PostgreSQL and build the API and
+scraper connection URLs.
+
 Build & run
 
 ```bash
 docker compose up -d --build
 ```
 
-The application creates its PostgreSQL tables automatically on startup. Set
-`DATABASE_URL` in `.env` to use a hosted PostgreSQL database instead; the local
-`postgres` service can then be left unused.
+The application creates its PostgreSQL tables automatically on startup. For an
+existing PostgreSQL volume, set `POSTGRES_PASSWORD` to the current database
+password. To rotate it, open `docker compose exec postgres psql -U gguser -d ggpoker`
+and run `\password gguser`. Update `POSTGRES_PASSWORD` in `.env` and run
+`docker compose up -d` to apply the new connection settings. If you use a
+separate `DATABASE_URL` in `.env` for local tools, update it too.
+
+For DBeaver, connect to PostgreSQL at `127.0.0.1:5433` using database `ggpoker`,
+user `gguser`, and your PostgreSQL password. For a VPS, enter the same database
+settings in DBeaver's Main tab and enable the SSH tunnel using your VPS address
+and SSH login on port `22`.
 
 Persisted data
 
@@ -166,8 +179,8 @@ Environment overrides (edit `docker-compose.yml` or pass with `-e`)
 Run multiple scraper instances
 
 Multiple instances should share PostgreSQL, rather than the mounted SQLite file. The
-Compose default uses the local PostgreSQL service; set `DATABASE_URL` in `.env` only
-when using a hosted PostgreSQL database. Start one container per target with a unique name:
+The Compose scrapers use its local PostgreSQL service. Start one container per
+target with a unique name:
 
 ```bash
 docker compose build scraper

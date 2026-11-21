@@ -1,3 +1,6 @@
-# PostgreSQL connection for view_remote_database.py
-# Set DATABASE_URL in your local .env and replace the placeholders below.
-DATABASE_URL=postgresql://USERNAME:PASSWORD@HOST:5432/DATABASE
+# Set this in your local .env before running Docker Compose.
+# For a new database, generate a password with openssl rand -hex 32.
+POSTGRES_PASSWORD=
+
+# Optional PostgreSQL connection for view_remote_database.py.
+# DATABASE_URL=postgresql://USERNAME:PASSWORD@HOST:5432/DATABASE

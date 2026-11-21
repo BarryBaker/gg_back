@@ -50,7 +50,8 @@ def resolve_db_config():
     db_path = os.getenv("DB_PATH")
     if not pg_url and not db_path:
         # Local API runs reach the Compose database through the published host port.
-        pg_url = "postgresql://gguser:ggpassword@127.0.0.1:5433/ggpoker"
+        password = os.getenv("POSTGRES_PASSWORD", "")
+        pg_url = f"postgresql://gguser:{password}@127.0.0.1:5433/ggpoker"
     if pg_url:
         return ("postgres", urlparse(pg_url))
     if db_path:

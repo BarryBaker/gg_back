@@ -258,9 +258,9 @@ def fetch_player_data(leaderboard: str, player_name: str) -> Dict[str, List]:
                                                 as secs,
                                             p.name as name ,country,points 
                                             from facts 
-                                            join players p  on player_id  = p.id 
-                                            join update_batch ub on update_id =ub.id
-                                            join leaderboards l on leaderboard_id =l.id
+                                            left join players p  on player_id  = p.id 
+                                            left join update_batch ub on update_id =ub.id
+                                            left join leaderboards l on leaderboard_id =l.id
                                             where p.name = %s and l.name = %s
                                             order by ub.id desc,points desc),
                                         windows as (
@@ -290,7 +290,7 @@ def fetch_player_data(leaderboard: str, player_name: str) -> Dict[str, List]:
                                         select 
                                             timezone('UTC', start_day)::date as day,points,secs,secs_before,point_diff
                                         from diffs
-                                        where secs>0.00138
+                                        where secs>0.0020833
                                         order by day,secs_before
                                         """,
                     (player_name, leaderboard),
@@ -300,7 +300,9 @@ def fetch_player_data(leaderboard: str, player_name: str) -> Dict[str, List]:
                 raise
 
             updates = cur.fetchall()
-            print(f"Fetched {len(updates)} updates for leaderboard '{leaderboard}'")
+            print(
+                f"Fetched {len(updates)} updates for leaderboard '{leaderboard}', player '{player_name}'"
+            )
             result = {}
 
             for i in updates:
@@ -353,7 +355,7 @@ def fetch_player_data(leaderboard: str, player_name: str) -> Dict[str, List]:
             }
 
 
-def fetch_top_players(leaderboard: str, limit: int = 50) -> List[str]:
+def fetch_top_players(leaderboard: str, limit: int = 10) -> List[str]:
 
     driver, _ = resolve_db_config()
     if driver == "sqlite":
@@ -366,21 +368,18 @@ def fetch_top_players(leaderboard: str, limit: int = 50) -> List[str]:
             lb_id = row[0]
             cur.execute(
                 """
-                WITH daily AS (
-                  SELECT date(ub.ts) AS d, MAX(ub.id) AS update_id
+               WITH daily AS ( SELECT date(ub.ts) AS d, MAX(ub.id) AS update_id
                   FROM update_batch ub
                   JOIN facts f ON f.update_id = ub.id
-                  WHERE f.leaderboard_id = ?
-                    AND time(ub.ts) < '21:00:00'
+                  WHERE f.leaderboard_id = 6 AND (ub.ts AT TIME ZONE 'UTC')::time < '8:00:00' and DATE(ub.ts) >= CURRENT_DATE - INTERVAL '30 days'
                   GROUP BY date(ub.ts)
-                )
-                SELECT pl.name, SUM(f.points) AS total
+                 )
+                 SELECT pl.name, SUM(f.points) AS total
                 FROM facts f
                 JOIN daily d     ON d.update_id = f.update_id
-                JOIN players pl  ON pl.id = f.player_id
-                WHERE f.leaderboard_id = ?
-                GROUP BY pl.name
-                ORDER BY total DESC
+                  JOIN players pl  ON pl.id = f.player_id
+                  group by pl.name
+                  order by total desc 
                 LIMIT ?
                 """,
                 (lb_id, lb_id, limit),
@@ -446,6 +445,9 @@ def api_table_data(leaderboard: str):
         # Defaults: last_columns=10, limit=15
         limit = int(request.args.get("limit", 16))
         last_cols = int(request.args.get("columns", 2))
+        print(
+            f"Fetching data for leaderboard '{leaderboard}' with limit={limit} and last_columns={last_cols}"
+        )
 
         payload = fetch_table_data(leaderboard, limit=limit, last_columns=last_cols)
         return jsonify(payload)

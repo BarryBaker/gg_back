@@ -144,14 +144,17 @@ services:
       INTERVAL_AFTER: "30"
       SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
-  # scraper_spin_gold:
-  #   <<: *scraper
-  #   container_name: gg_scraper_spin_gold
-  #   environment:
-  #     <<: *scraper-env
-  #     GAME_NAME: 3MAX and 6MAX will share a single leaderboard.
-  #     PROMO_URL: "https://ggpoker.com/poker-promotions/spin-gold-daily-leaderboard/"
-  #     TABLE_NAME: "SPIN_GOLD"
+  scraper_spin_gold:
+    <<: *scraper
+    container_name: gg_scraper_spin_gold
+    environment:
+      <<: *scraper-env
+      GAME_NAME: 3MAX and 6MAX will share a single leaderboard.
+      PROMO_URL: "https://ggpoker.com/poker-promotions/spin-gold-daily-leaderboard/"
+      TABLE_NAME: "SPIN_GOLD"
+      INTERVAL_BEFORE: "130"
+      INTERVAL_AFTER: "60"
+      SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
   api:
     build: .

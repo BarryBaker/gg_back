@@ -120,41 +120,41 @@ services:
       INTERVAL_AFTER: "50"
       SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
-  scraper_holdem_aof:
-    <<: *scraper
-    container_name: gg_scraper_holdem_aof
-    environment:
-      <<: *scraper-env
-      GAME_NAME: Hold'em
-      PROMO_URL: "https://ggpoker.com/poker-promotions/aof-daily-leaderboard/"
-      TABLE_NAME: "AOF"
-      INTERVAL_AFTER: "60"
-      INTERVAL_BEFORE: "80"
-      SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
+  # scraper_holdem_aof:
+  #   <<: *scraper
+  #   container_name: gg_scraper_holdem_aof
+  #   environment:
+  #     <<: *scraper-env
+  #     GAME_NAME: Hold'em
+  #     PROMO_URL: "https://ggpoker.com/poker-promotions/aof-daily-leaderboard/"
+  #     TABLE_NAME: "AOF"
+  #     INTERVAL_AFTER: "60"
+  #     INTERVAL_BEFORE: "80"
+  #     SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
-  scraper_plo_aof:
-    <<: *scraper
-    container_name: gg_scraper_plo_aof
-    environment:
-      <<: *scraper-env
-      GAME_NAME: Omaha
-      PROMO_URL: "https://ggpoker.com/poker-promotions/aof-daily-leaderboard/"
-      TABLE_NAME: "AOF"
-      INTERVAL_BEFORE: "110"
-      INTERVAL_AFTER: "30"
-      SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
+  # scraper_plo_aof:
+  #   <<: *scraper
+  #   container_name: gg_scraper_plo_aof
+  #   environment:
+  #     <<: *scraper-env
+  #     GAME_NAME: Omaha
+  #     PROMO_URL: "https://ggpoker.com/poker-promotions/aof-daily-leaderboard/"
+  #     TABLE_NAME: "AOF"
+  #     INTERVAL_BEFORE: "110"
+  #     INTERVAL_AFTER: "30"
+  #     SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
-  scraper_spin_gold:
-    <<: *scraper
-    container_name: gg_scraper_spin_gold
-    environment:
-      <<: *scraper-env
-      GAME_NAME: 3MAX and 6MAX will share a single leaderboard.
-      PROMO_URL: "https://ggpoker.com/poker-promotions/spin-gold-daily-leaderboard/"
-      TABLE_NAME: "SPIN_GOLD"
-      INTERVAL_BEFORE: "130"
-      INTERVAL_AFTER: "60"
-      SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
+  # scraper_spin_gold:
+  #   <<: *scraper
+  #   container_name: gg_scraper_spin_gold
+  #   environment:
+  #     <<: *scraper-env
+  #     GAME_NAME: 3MAX and 6MAX will share a single leaderboard.
+  #     PROMO_URL: "https://ggpoker.com/poker-promotions/spin-gold-daily-leaderboard/"
+  #     TABLE_NAME: "SPIN_GOLD"
+  #     INTERVAL_BEFORE: "130"
+  #     INTERVAL_AFTER: "60"
+  #     SLEEP_TIME_BEFORE_NEXT_BLIND_LEVEL: "12"
 
   api:
     build: .

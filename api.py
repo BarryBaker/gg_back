@@ -385,7 +385,22 @@ def fetch_top_players(leaderboard: str, limit: int = 10) -> List[str]:
                 (lb_id, lb_id, limit),
             )
             rows = cur.fetchall()
-            return [r[0] for r in rows]
+            cur.execute(
+                """
+               with dates as (SELECT timezone('UTC', ub.ts)::date AS d, MAX(ub.id) AS update_id
+                      FROM update_batch ub
+                      JOIN facts f ON f.update_id = ub.id
+                      WHERE f.leaderboard_id = 
+                      GROUP BY timezone('UTC', ub.ts)::date)
+  select MAX(d),MIN(d) from dates
+                """,
+                (lb_id,),
+            )
+            date_range = cur.fetchall()
+            return {
+                "players": [r[0] for r in rows],
+                "date_range": [r[0] for r in date_range],
+            }
     else:
         with open_connection() as conn:
             with conn.cursor() as cur:
@@ -418,7 +433,22 @@ def fetch_top_players(leaderboard: str, limit: int = 10) -> List[str]:
                     (lb_id, lb_id, limit),
                 )
                 rows = cur.fetchall()
-                return [r[0] for r in rows]
+                cur.execute(
+                    """  with dates as (SELECT timezone('UTC', ub.ts)::date AS d, MAX(ub.id) AS update_id
+                                      FROM update_batch ub
+                                      JOIN facts f ON f.update_id = ub.id
+                                      WHERE f.leaderboard_id = %s
+                                      GROUP BY timezone('UTC', ub.ts)::date)
+                  select MIN(d),MAX(d) from dates
+                                """,
+                    (lb_id,),
+                )
+                date_range = cur.fetchall()
+
+                return {
+                    "players": [r[0] for r in rows],
+                    "date_range": date_range[0] if date_range else [None, None],
+                }
 
 
 app = Flask(__name__)
